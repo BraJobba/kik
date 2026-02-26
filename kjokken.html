@@ -30,13 +30,29 @@
             };
 
             useEffect(() => {
-                loadData();
-                const sub = supabaseClient
-                    .channel('changes')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadData)
-                    .subscribe();
-                return () => supabaseClient.removeChannel(sub);
-            }, []);
+    loadData(); // Hent eksisterende ordrer med en gang
+
+    const channel = supabaseClient
+        .channel('schema-db-changes')
+        .on(
+            'postgres_changes', 
+            { 
+                event: 'INSERT', // Lytt spesifikt etter NYE rader
+                schema: 'public', 
+                table: 'orders' 
+            }, 
+            (payload) => {
+                console.log('NY ORDRE MOTTATT!', payload);
+                // Vi legger den nye ordren direkte inn i listen i stedet for å hente alt på nytt
+                setOrders(prev => [payload.new, ...prev]);
+            }
+        )
+        .subscribe((status) => {
+            console.log("Status på tilkobling:", status);
+        });
+
+    return () => supabaseClient.removeChannel(channel);
+}, []);
 
             return (
                 <div>
