@@ -1,70 +1,72 @@
-<script type="text/babel">
-    const { useState, useEffect } = React;
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <title>Kjøkkenskjerm - Live</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-white p-8">
+    <div id="root"></div>
 
-    const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-    const KitchenDashboard = () => {
-        const [orders, setOrders] = useState([]);
-        const [debugInfo, setDebugInfo] = useState("");
+        const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        const fetchOrders = async () => {
-            // Vi prøver å hente alt fra 'orders' tabellen
-            const { data, error } = await supabaseClient
-                .from('orders')
-                .select('*');
-            
-            if (error) {
-                setDebugInfo("Feil: " + error.message);
-            } else {
-                console.log("Data mottatt:", data);
-                setOrders(data || []);
-                if (data.length === 0) setDebugInfo("Tabellen er tom (0 rader funnet)");
-                else setDebugInfo("");
-            }
-        };
+        function Kitchen() {
+            const [orders, setOrders] = useState([]);
+            const [error, setError] = useState(null);
 
-        useEffect(() => {
-            fetchOrders();
-            const channel = supabaseClient
-                .channel('kitchen_realtime')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
-                .subscribe();
+            const loadData = async () => {
+                const { data, error } = await supabaseClient.from('orders').select('*');
+                if (error) setError(error.message);
+                else setOrders(data);
+            };
 
-            return () => supabaseClient.removeChannel(channel);
-        }, []);
+            useEffect(() => {
+                loadData();
+                const sub = supabaseClient
+                    .channel('changes')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadData)
+                    .subscribe();
+                return () => supabaseClient.removeChannel(sub);
+            }, []);
 
-        return (
-            <div className="p-6 max-w-4xl mx-auto">
-                <h1 className="text-3xl font-bold mb-4">Kjøkken <span className="text-emerald-400">Live</span></h1>
-                
-                {/* Dette er detektiven vår */}
-                {debugInfo && <p className="text-orange-400 text-xs mb-4 font-mono uppercase tracking-widest">{debugInfo}</p>}
-
-                <div className="grid gap-4">
-                    {orders.length === 0 ? (
-                        <div className="py-20 border-2 border-dashed border-slate-800 rounded-3xl text-center">
-                            <p className="text-slate-600">Søk i databasen ga ingen treff...</p>
-                        </div>
-                    ) : (
-                        orders.map(order => (
-                            <div key={order.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl border-l-4 border-l-emerald-500">
-                                <div className="flex justify-between">
-                                    <div>
-                                        <span className="text-emerald-400 font-black text-xl">BORD {order.table_number}</span>
-                                        <h2 className="text-2xl font-bold text-slate-100 mt-2">{order.items}</h2>
+            return (
+                <div>
+                    <h1 className="text-3xl font-bold mb-6 text-emerald-400">Kjøkkenskjerm</h1>
+                    
+                    {error && <p className="text-red-500 mb-4">Feil: {error}</p>}
+                    
+                    <div className="grid gap-4">
+                        {orders.length === 0 ? (
+                            <p className="text-slate-500 italic">Venter på bestillinger fra databasen...</p>
+                        ) : (
+                            orders.map(o => (
+                                <div key={o.id} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-lg border-l-8 border-emerald-500">
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <span className="text-emerald-400 font-black text-2xl uppercase">Bord {o.table_number}</span>
+                                            <h2 className="text-xl text-slate-100 mt-1 font-medium">{o.items}</h2>
+                                        </div>
+                                        <div className="text-slate-700 font-mono text-sm">#{o.id}</div>
                                     </div>
-                                    <div className="text-right text-xs text-slate-600">ID: {order.id}</div>
                                 </div>
-                            </div>
-                        ))
-                    )}
+                            ))
+                        )}
+                    </div>
                 </div>
-            </div>
-        );
-    };
+            );
+        }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<KitchenDashboard />);
-</script>
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Kitchen />);
+    </script>
+</body>
+</html>
