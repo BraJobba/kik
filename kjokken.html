@@ -27,12 +27,18 @@
             const [orders, setOrders] = useState([]);
 
             const loadOrders = async () => {
-                const { data } = await supabaseClient
-                    .from('orders')
-                    .select('*')
-                    .eq('status', 'ny'); // Vi skjuler de som er ferdige
-                setOrders(data || []);
-            };
+    // Vi fjerner .neq() eller .eq() helt for å feilsøke
+    const { data, error } = await supabaseClient
+        .from('orders')
+        .select('*'); 
+    
+    if (error) {
+        console.error("Supabase feil:", error.message);
+    } else {
+        console.log("Data funnet:", data);
+        setOrders(data || []);
+    }
+};
 
             useEffect(() => {
                 loadOrders();
