@@ -1,78 +1,70 @@
-<!DOCTYPE html>
-<html lang="no">
-<head>
-    <meta charset="UTF-8">
-    <title>AI Servitør - Kjøkken Live</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
-<body class="bg-slate-950 text-white font-sans">
-    <div id="root"></div>
+<script type="text/babel">
+    const { useState, useEffect } = React;
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+    const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // Info hentet fra dine bilder
-        const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const KitchenDashboard = () => {
+        const [orders, setOrders] = useState([]);
+        const [debugInfo, setDebugInfo] = useState("");
 
-        const KitchenDashboard = () => {
-            const [orders, setOrders] = useState([]);
-
-            const fetchOrders = async () => {
-                const { data, error } = await supabaseClient
-                    .from('orders')
-                    .select('*'); // Vi henter alt uten sortering for å unngå feil
-                
-                if (!error) setOrders(data);
-            };
-
-            useEffect(() => {
-                fetchOrders();
-                // Sanntid-lytting
-                const channel = supabaseClient
-                    .channel('kitchen')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
-                    .subscribe();
-
-                return () => supabaseClient.removeChannel(channel);
-            }, []);
-
-            return (
-                <div className="p-6 max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold mb-8">Kjøkken <span className="text-emerald-400">Live</span></h1>
-
-                    <div className="grid gap-4">
-                        {orders.length === 0 ? (
-                            <p className="text-slate-500">Venter på første bestilling...</p>
-                        ) : (
-                            orders.map(order => (
-                                <div key={order.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl border-l-4 border-l-emerald-500">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            {/* Bruker nøyaktig kolonnenavn fra bilde 4 */}
-                                            <span className="text-emerald-400 font-black text-xl">BORD {order.table_number}</span>
-                                            <h2 className="text-2xl font-bold text-slate-100 mt-2">{order.items}</h2>
-                                            <p className="text-slate-500 text-sm mt-1 capitalize">Status: {order.status}</p>
-                                        </div>
-                                        <div className="bg-slate-800 px-4 py-2 rounded-2xl text-xs font-bold text-slate-400">
-                                            ID: #{order.id}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            );
+        const fetchOrders = async () => {
+            // Vi prøver å hente alt fra 'orders' tabellen
+            const { data, error } = await supabaseClient
+                .from('orders')
+                .select('*');
+            
+            if (error) {
+                setDebugInfo("Feil: " + error.message);
+            } else {
+                console.log("Data mottatt:", data);
+                setOrders(data || []);
+                if (data.length === 0) setDebugInfo("Tabellen er tom (0 rader funnet)");
+                else setDebugInfo("");
+            }
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<KitchenDashboard />);
-    </script>
-</body>
-</html>
+        useEffect(() => {
+            fetchOrders();
+            const channel = supabaseClient
+                .channel('kitchen_realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
+                .subscribe();
+
+            return () => supabaseClient.removeChannel(channel);
+        }, []);
+
+        return (
+            <div className="p-6 max-w-4xl mx-auto">
+                <h1 className="text-3xl font-bold mb-4">Kjøkken <span className="text-emerald-400">Live</span></h1>
+                
+                {/* Dette er detektiven vår */}
+                {debugInfo && <p className="text-orange-400 text-xs mb-4 font-mono uppercase tracking-widest">{debugInfo}</p>}
+
+                <div className="grid gap-4">
+                    {orders.length === 0 ? (
+                        <div className="py-20 border-2 border-dashed border-slate-800 rounded-3xl text-center">
+                            <p className="text-slate-600">Søk i databasen ga ingen treff...</p>
+                        </div>
+                    ) : (
+                        orders.map(order => (
+                            <div key={order.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl border-l-4 border-l-emerald-500">
+                                <div className="flex justify-between">
+                                    <div>
+                                        <span className="text-emerald-400 font-black text-xl">BORD {order.table_number}</span>
+                                        <h2 className="text-2xl font-bold text-slate-100 mt-2">{order.items}</h2>
+                                    </div>
+                                    <div className="text-right text-xs text-slate-600">ID: {order.id}</div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<KitchenDashboard />);
+</script>
