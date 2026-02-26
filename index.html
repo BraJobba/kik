@@ -9,10 +9,6 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        .fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans">
     <div id="root"></div>
@@ -20,9 +16,8 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- KONFIGURASJON ---
         const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkma2bE'; 
+        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const MENY = [
@@ -36,126 +31,97 @@
             const [cart, setCart] = useState([]);
             const [tableNumber, setTableNumber] = useState("");
             const [lastOrderId, setLastOrderId] = useState(null);
-            const [orderStatus, setOrderStatus] = useState(null); // 'sendt', 'behandles', 'ferdig'
-            const [estTime, setEstTime] = useState(null);
+            const [liveOrder, setLiveOrder] = useState(null);
+            const [displayTime, setDisplayTime] = useState("");
 
-            // 1. LYTT PÅ OPPDATERINGER FRA KJØKKENET
+            // 1. LYTT PÅ OPPDATERINGER FRA DATABASEN
             useEffect(() => {
                 if (!lastOrderId) return;
 
-                const channel = supabaseClient
-                    .channel('order-status')
-                    .on('postgres_changes', { 
-                        event: 'UPDATE', 
-                        schema: 'public', 
-                        table: 'orders',
-                        filter: `id=eq.${lastOrderId}` 
-                    }, (payload) => {
-                        const updated = payload.new;
-                        if (updated.status === 'behandles') {
-                            setOrderStatus('behandles');
-                            setEstTime(updated.estimated_minutes);
-                        }
-                        if (updated.status === 'ferdig') {
-                            setOrderStatus('ferdig');
-                        }
-                    })
+                const fetchOrder = async () => {
+                    const { data } = await supabaseClient.from('orders').select('*').eq('id', lastOrderId).single();
+                    setLiveOrder(data);
+                };
+
+                fetchOrder();
+
+                const sub = supabaseClient
+                    .channel('status')
+                    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${lastOrderId}` }, 
+                    payload => setLiveOrder(payload.new))
                     .subscribe();
 
-                return () => supabaseClient.removeChannel(channel);
+                return () => supabaseClient.removeChannel(sub);
             }, [lastOrderId]);
 
-            const addToCart = (item) => {
-                setCart([...cart, item]);
-            };
+            // 2. LIVE NEDTELLING FOR GJESTEN
+            useEffect(() => {
+                if (!liveOrder?.started_at || !liveOrder?.estimated_minutes) return;
+
+                const interval = setInterval(() => {
+                    const start = new Date(liveOrder.started_at).getTime();
+                    const limit = liveOrder.estimated_minutes * 60000;
+                    const now = new Date().getTime();
+                    const diff = (start + limit) - now;
+                    
+                    const isOver = diff < 0;
+                    const absDiff = Math.abs(diff);
+                    const min = Math.floor(absDiff / 60000);
+                    const sec = Math.floor((absDiff % 60000) / 1000);
+                    
+                    setDisplayTime(`${isOver ? 'Klar om et øyeblikk!' : min + ':' + sec.toString().padStart(2, '0')}`);
+                }, 1000);
+
+                return () => clearInterval(interval);
+            }, [liveOrder]);
 
             const sendOrder = async () => {
-                if (!tableNumber) return alert("Vennligst skriv inn bordnummer!");
-                if (cart.length === 0) return alert("Kurven er tom!");
-
-                const itemNames = cart.map(i => i.navn).join(", ");
-                
-                const { data, error } = await supabaseClient
-                    .from('orders')
-                    .insert([{ 
-                        table_number: parseInt(tableNumber), 
-                        items: itemNames, 
-                        status: 'ny' 
-                    }])
-                    .select();
-
-                if (error) {
-                    alert("Feil ved sending: " + error.message);
-                } else {
-                    setLastOrderId(data[0].id);
-                    setOrderStatus('sendt');
-                    setCart([]);
-                    alert("Bestilling mottatt av kjøkkenet!");
-                }
+                if (!tableNumber) return alert("Skriv bordnummer!");
+                const { data } = await supabaseClient.from('orders').insert([{ 
+                    table_number: parseInt(tableNumber), 
+                    items: cart.map(i => i.navn).join(", "), 
+                    status: 'ny' 
+                }]).select();
+                setLastOrderId(data[0].id);
+                setCart([]);
             };
-
-            const totalPris = cart.reduce((sum, item) => sum + item.pris, 0);
 
             return (
                 <div className="max-w-md mx-auto p-6 pb-32">
                     <header className="py-8 text-center">
-                        <h1 className="text-3xl font-black italic tracking-tighter">DIGITAL<span className="text-emerald-500">MENY</span></h1>
-                        <input 
-                            type="number" 
-                            placeholder="Ditt bordnummer"
-                            className="mt-4 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-center w-32 focus:border-emerald-500 outline-none"
-                            value={tableNumber}
-                            onChange={(e) => setTableNumber(e.target.value)}
-                        />
+                        <h1 className="text-3xl font-black italic">DIGITAL<span className="text-emerald-500">MENY</span></h1>
+                        <input type="number" placeholder="Bord" className="mt-4 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-center w-24" value={tableNumber} onChange={e => setTableNumber(e.target.value)} />
                     </header>
 
-                    {/* STATUS-VARSEL FRA KJØKKENET */}
-                    {orderStatus && (
-                        <div className="mb-8 fade-in bg-emerald-950/50 border border-emerald-500/50 p-6 rounded-[2rem] text-center shadow-xl">
-                            <h3 className="font-bold text-emerald-400 uppercase tracking-widest text-sm mb-2">Status på din mat</h3>
-                            {orderStatus === 'sendt' && <p>Venter på bekreftelse fra kokken...</p>}
-                            {orderStatus === 'behandles' && (
+                    {liveOrder && (
+                        <div className="mb-8 bg-emerald-950/30 border border-emerald-500/50 p-6 rounded-[2rem] text-center shadow-2xl">
+                            <h3 className="text-xs uppercase tracking-widest text-emerald-500 font-bold mb-2">Status</h3>
+                            {liveOrder.status === 'ny' && <p className="animate-pulse">Venter på bekreftelse...</p>}
+                            {liveOrder.status === 'behandles' && (
                                 <div>
-                                    <p className="text-xl font-bold">Maten din tilberedes! 👨‍🍳</p>
-                                    <p className="mt-2 text-emerald-300">Forventet ferdig om ca. <span className="text-2xl font-black">{estTime}</span> minutter.</p>
+                                    <p className="text-lg font-bold">Kjøkkenet lager maten din! 👨‍🍳</p>
+                                    <p className="text-4xl font-black mt-3 text-white font-mono">{displayTime}</p>
                                 </div>
                             )}
-                            {orderStatus === 'ferdig' && <p className="text-xl font-bold text-white">Maten er ferdig! Velbekomme! 🍽️</p>}
+                            {liveOrder.status === 'ferdig' && <p className="text-xl font-bold text-white italic underline">Maten er servert! Velbekomme! 🍽️</p>}
                         </div>
                     )}
 
-                    {/* MENY-LISTE */}
                     <div className="space-y-4">
-                        <h2 className="text-xl font-bold mb-4 border-l-4 border-emerald-500 pl-3">Dagens Retter</h2>
                         {MENY.map(item => (
-                            <div key={item.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-900 hover:border-slate-800 transition-all shadow-lg group">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-bold text-lg text-white">{item.navn}</h3>
-                                        <p className="text-slate-500 text-sm mt-1">{item.beskrivelse}</p>
-                                        <p className="text-emerald-500 font-bold mt-2">{item.pris},-</p>
-                                    </div>
-                                    <button 
-                                        onClick={() => addToCart(item)}
-                                        className="bg-slate-800 group-hover:bg-emerald-600 p-3 rounded-2xl transition-all"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                    </button>
+                            <div key={item.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 flex justify-between items-center shadow-lg">
+                                <div>
+                                    <h3 className="font-bold text-white">{item.navn}</h3>
+                                    <p className="text-emerald-500 font-bold">{item.pris},-</p>
                                 </div>
+                                <button onClick={() => setCart([...cart, item])} className="bg-emerald-600 p-3 rounded-2xl">+</button>
                             </div>
                         ))}
                     </div>
 
-                    {/* HANDLEKURV (Flytende nederst) */}
-                    {cart.length > 0 && !orderStatus && (
-                        <div className="fixed bottom-6 left-6 right-6 fade-in">
-                            <button 
-                                onClick={sendOrder}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-3xl shadow-2xl flex justify-between px-8 items-center transition-all transform active:scale-95"
-                            >
-                                <span>BESTILL {cart.length} RETTER</span>
-                                <span className="text-xl">{totalPris},-</span>
-                            </button>
+                    {cart.length > 0 && !liveOrder && (
+                        <div className="fixed bottom-6 left-6 right-6">
+                            <button onClick={sendOrder} className="w-full bg-emerald-600 py-5 rounded-3xl font-black shadow-2xl">BESTILL {cart.length} RETTER</button>
                         </div>
                     )}
                 </div>
