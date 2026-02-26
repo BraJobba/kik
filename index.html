@@ -3,55 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Servitør - Gjest</title>
+    <title>AI Servitør - Bestilling</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body>
+<body class="bg-slate-900 text-white font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
-        // Her limer du inn koden jeg ga deg for "MenuApp" tidligere
-        // (Jeg har lagt den inn under for deg så du bare kan kopiere alt herfra)
-        const { useState } = React;
+        const { useState, useEffect } = React;
+
+        // --- DIN KONFIGURASJON ---
+        // Bytt ut disse med verdiene fra dine skjermbilder:
+        const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co'; 
+        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkma2bE'; // Lim inn den som starter med sb_publishable
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const MenuApp = () => {
             const [cart, setCart] = useState([]);
-            const [orderStatus, setOrderStatus] = useState('idle');
+            const [orderSent, setOrderSent] = useState(false);
+
             const menuItems = [
-                { id: 1, name: "Trøffelpasta", price: 245, desc: "Fersk pasta med sort trøffel" },
-                { id: 2, name: "Grillet Entrecôte", price: 395, desc: "Marmorert kjøtt med rotgrønnsaker" },
-                { id: 3, name: "Sashimi-tallerken", price: 185, desc: "Laks, tunfisk og kamskjell" }
+                { id: 1, name: "Trøffelpasta", price: 245 },
+                { id: 2, name: "Grillet Entrecôte", price: 395 },
+                { id: 3, name: "Sashimi-tallerken", price: 185 }
             ];
 
             const addToCart = (item) => setCart([...cart, item]);
-            const total = cart.reduce((sum, item) => sum + item.price, 0);
+
+            const sendOrder = async () => {
+                if (cart.length === 0) return;
+                
+                const itemNames = cart.map(i => i.name).join(", ");
+                
+                // Her sender vi dataen til Supabase-tabellen din!
+                const { error } = await supabaseClient
+                    .from('orders')
+                    .insert([{ 
+                        table_number: 12, 
+                        items: itemNames, 
+                        status: 'ny' 
+                    }]);
+
+                if (error) {
+                    alert("Noe gikk galt: " + error.message);
+                } else {
+                    setOrderSent(true);
+                    setCart([]);
+                }
+            };
 
             return (
-                <div className="min-h-screen bg-slate-900 text-white p-8 font-sans">
-                    <header className="flex justify-between items-center mb-12">
-                        <h1 className="text-3xl font-bold tracking-tight text-emerald-400">AI Waiter</h1>
-                        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">Bord 12</div>
+                <div className="p-8 max-w-2xl mx-auto">
+                    <header className="mb-10 text-center">
+                        <h1 className="text-4xl font-extrabold text-emerald-400 tracking-tight">AI Waiter</h1>
+                        <p className="text-slate-400 mt-2">Bord 12 - Velkommen!</p>
                     </header>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        <div className="space-y-4">
-                            {menuItems.map(item => (
-                                <div key={item.id} className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
-                                    <h3 className="text-lg font-medium">{item.name}</h3>
-                                    <p className="text-emerald-400 font-bold">{item.price},-</p>
-                                    <button onClick={() => addToCart(item)} className="mt-4 bg-emerald-500 px-6 py-2 rounded-full">Legg til</button>
+                    
+                    {!orderSent ? (
+                        <div className="space-y-6">
+                            <div className="grid gap-4">
+                                {menuItems.map(item => (
+                                    <div key={item.id} className="bg-slate-800 p-5 rounded-2xl flex justify-between items-center border border-slate-700 hover:border-emerald-500/50 transition">
+                                        <div>
+                                            <h3 className="font-bold text-lg">{item.name}</h3>
+                                            <p className="text-emerald-400 font-mono">{item.price},-</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => addToCart(item)} 
+                                            className="bg-emerald-500 hover:bg-emerald-600 w-12 h-12 rounded-full font-bold text-2xl shadow-lg active:scale-90 transition"
+                                        > + </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {cart.length > 0 && (
+                                <div className="bg-slate-800 p-6 rounded-3xl border-2 border-emerald-500 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <h2 className="text-xl font-bold mb-4">Din bestilling</h2>
+                                    <ul className="mb-6 space-y-2">
+                                        {cart.map((item, i) => (
+                                            <li key={i} className="flex justify-between text-slate-300">
+                                                <span>{item.name}</span>
+                                                <span>{item.price},-</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <button 
+                                        onClick={sendOrder} 
+                                        className="w-full bg-emerald-500 py-4 rounded-2xl font-bold text-xl hover:bg-emerald-600 transition"
+                                    >
+                                        Send til kjøkkenet
+                                    </button>
                                 </div>
-                            ))}
+                            )}
                         </div>
-                        <div className="bg-slate-800 p-8 rounded-3xl h-fit">
-                            <h2 className="text-xl font-semibold mb-4">Din bestilling</h2>
-                            {cart.map((item, i) => <div key={i} className="flex justify-between border-b border-slate-700 py-2"><span>{item.name}</span><span>{item.price},-</span></div>)}
-                            <div className="text-2xl font-bold mt-6">Totalt: {total},-</div>
-                            <button onClick={() => setOrderStatus('sent')} className="w-full bg-emerald-500 py-4 rounded-2xl mt-6 font-bold">Send bestilling</button>
+                    ) : (
+                        <div className="text-center bg-slate-800 p-12 rounded-3xl border border-emerald-500 shadow-2xl">
+                            <div className="text-6xl mb-4">👨‍🍳</div>
+                            <h2 className="text-2xl font-bold mb-2">Takk for bestillingen!</h2>
+                            <p className="text-slate-400">Kjøkkenet har mottatt ordren din og vil snart angi estimert ventetid.</p>
+                            <button 
+                                onClick={() => setOrderSent(false)} 
+                                className="mt-8 text-emerald-400 underline"
+                            > Bestill noe mer? </button>
                         </div>
-                    </div>
+                    )}
                 </div>
             );
         };
