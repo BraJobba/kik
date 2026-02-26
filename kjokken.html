@@ -15,37 +15,28 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Dine data fra skjermbildene
+        // Info hentet fra dine bilder
         const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkma2bE'; // Bruk hele din publishable key her
+        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const KitchenDashboard = () => {
             const [orders, setOrders] = useState([]);
-            const [status, setStatus] = useState("Kobler til...");
 
             const fetchOrders = async () => {
                 const { data, error } = await supabaseClient
                     .from('orders')
-                    .select('*')
+                    .select('*'); // Vi henter alt uten sortering for å unngå feil
                 
-                if (error) setStatus("Feil ved henting: " + error.message);
-                else {
-                    setOrders(data);
-                    setStatus("Live: Venter på nye bestillinger...");
-                }
+                if (!error) setOrders(data);
             };
 
             useEffect(() => {
                 fetchOrders();
-
-                // Lytt på endringer i sanntid
+                // Sanntid-lytting
                 const channel = supabaseClient
-                    .channel('any')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
-                        console.log('Endring detektert!', payload);
-                        fetchOrders();
-                    })
+                    .channel('kitchen')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
                     .subscribe();
 
                 return () => supabaseClient.removeChannel(channel);
@@ -53,26 +44,23 @@
 
             return (
                 <div className="p-6 max-w-4xl mx-auto">
-                    <header className="flex justify-between items-center mb-8">
-                        <h1 className="text-3xl font-bold">Kjøkken <span className="text-emerald-500">Live</span></h1>
-                        <span className="text-xs text-slate-500 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">{status}</span>
-                    </header>
+                    <h1 className="text-3xl font-bold mb-8">Kjøkken <span className="text-emerald-400">Live</span></h1>
 
                     <div className="grid gap-4">
                         {orders.length === 0 ? (
-                            <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-3xl">
-                                <p className="text-slate-600">Ingen aktive bestillinger i systemet.</p>
-                            </div>
+                            <p className="text-slate-500">Venter på første bestilling...</p>
                         ) : (
                             orders.map(order => (
-                                <div key={order.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl animate-in fade-in zoom-in duration-300">
+                                <div key={order.id} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl border-l-4 border-l-emerald-500">
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <span className="text-emerald-500 font-black text-xl mr-2">BORD {order.table_number || '??'}</span>
-                                            <h2 className="text-2xl font-medium text-slate-100 mt-2">{order.items || 'Ingen varer'}</h2>
+                                            {/* Bruker nøyaktig kolonnenavn fra bilde 4 */}
+                                            <span className="text-emerald-400 font-black text-xl">BORD {order.table_number}</span>
+                                            <h2 className="text-2xl font-bold text-slate-100 mt-2">{order.items}</h2>
+                                            <p className="text-slate-500 text-sm mt-1 capitalize">Status: {order.status}</p>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-slate-500 text-sm font-mono tracking-taller">NY ORDRE</p>
+                                        <div className="bg-slate-800 px-4 py-2 rounded-2xl text-xs font-bold text-slate-400">
+                                            ID: #{order.id}
                                         </div>
                                     </div>
                                 </div>
