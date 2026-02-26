@@ -30,7 +30,7 @@
                 const { data } = await supabaseClient
                     .from('orders')
                     .select('*')
-                    .neq('status', 'ferdig'); // Vi skjuler de som er ferdige
+                    .eq('status', 'ny'); // Vi skjuler de som er ferdige
                 setOrders(data || []);
             };
 
