@@ -3,121 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Servitør - Bestilling</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <title>Digital Meny & Bestilling</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </head>
-<body class="bg-slate-900 text-white font-sans">
+<body class="bg-slate-950 text-slate-100 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- DIN KONFIGURASJON ---
-        // Bytt ut disse med verdiene fra dine skjermbilder:
-        const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co'; 
-        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkma2bE'; // Lim inn den som starter med sb_publishable
-        
+        // --- KONFIGURASJON ---
+        const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkmaonv4Rk6Xo3X6I'; 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        const MenuApp = () => {
+        const MENY = [
+            { id: 1, navn: "Trøffelpasta", pris: 249, beskrivelse: "Fersk pasta med kremet trøffelsaus." },
+            { id: 2, navn: "Margherita Pizza", pris: 189, beskrivelse: "Tomat, mozzarella og fersk basilikum." },
+            { id: 3, navn: "Klassisk Burger", pris: 215, beskrivelse: "180g storfekjøtt med brioche-brød." },
+            { id: 4, navn: "Mineralvann", pris: 45, beskrivelse: "Valgfri brus 0.33l." }
+        ];
+
+        function GuestApp() {
             const [cart, setCart] = useState([]);
-            const [orderSent, setOrderSent] = useState(false);
+            const [tableNumber, setTableNumber] = useState("");
+            const [lastOrderId, setLastOrderId] = useState(null);
+            const [orderStatus, setOrderStatus] = useState(null); // 'sendt', 'behandles', 'ferdig'
+            const [estTime, setEstTime] = useState(null);
 
-            const menuItems = [
-                { id: 1, name: "Trøffelpasta", price: 245 },
-                { id: 2, name: "Grillet Entrecôte", price: 395 },
-                { id: 3, name: "Sashimi-tallerken", price: 185 }
-            ];
+            // 1. LYTT PÅ OPPDATERINGER FRA KJØKKENET
+            useEffect(() => {
+                if (!lastOrderId) return;
 
-            const addToCart = (item) => setCart([...cart, item]);
+                const channel = supabaseClient
+                    .channel('order-status')
+                    .on('postgres_changes', { 
+                        event: 'UPDATE', 
+                        schema: 'public', 
+                        table: 'orders',
+                        filter: `id=eq.${lastOrderId}` 
+                    }, (payload) => {
+                        const updated = payload.new;
+                        if (updated.status === 'behandles') {
+                            setOrderStatus('behandles');
+                            setEstTime(updated.estimated_minutes);
+                        }
+                        if (updated.status === 'ferdig') {
+                            setOrderStatus('ferdig');
+                        }
+                    })
+                    .subscribe();
+
+                return () => supabaseClient.removeChannel(channel);
+            }, [lastOrderId]);
+
+            const addToCart = (item) => {
+                setCart([...cart, item]);
+            };
 
             const sendOrder = async () => {
-                if (cart.length === 0) return;
+                if (!tableNumber) return alert("Vennligst skriv inn bordnummer!");
+                if (cart.length === 0) return alert("Kurven er tom!");
+
+                const itemNames = cart.map(i => i.navn).join(", ");
                 
-                const itemNames = cart.map(i => i.name).join(", ");
-                
-                // Her sender vi dataen til Supabase-tabellen din!
-                const { error } = await supabaseClient
+                const { data, error } = await supabaseClient
                     .from('orders')
                     .insert([{ 
-                        table_number: 12, 
+                        table_number: parseInt(tableNumber), 
                         items: itemNames, 
                         status: 'ny' 
-                    }]);
+                    }])
+                    .select();
 
                 if (error) {
-                    alert("Noe gikk galt: " + error.message);
+                    alert("Feil ved sending: " + error.message);
                 } else {
-                    setOrderSent(true);
+                    setLastOrderId(data[0].id);
+                    setOrderStatus('sendt');
                     setCart([]);
+                    alert("Bestilling mottatt av kjøkkenet!");
                 }
             };
 
-            return (
-                <div className="p-8 max-w-2xl mx-auto">
-                    <header className="mb-10 text-center">
-                        <h1 className="text-4xl font-extrabold text-emerald-400 tracking-tight">AI Waiter</h1>
-                        <p className="text-slate-400 mt-2">Bord 12 - Velkommen!</p>
-                    </header>
-                    
-                    {!orderSent ? (
-                        <div className="space-y-6">
-                            <div className="grid gap-4">
-                                {menuItems.map(item => (
-                                    <div key={item.id} className="bg-slate-800 p-5 rounded-2xl flex justify-between items-center border border-slate-700 hover:border-emerald-500/50 transition">
-                                        <div>
-                                            <h3 className="font-bold text-lg">{item.name}</h3>
-                                            <p className="text-emerald-400 font-mono">{item.price},-</p>
-                                        </div>
-                                        <button 
-                                            onClick={() => addToCart(item)} 
-                                            className="bg-emerald-500 hover:bg-emerald-600 w-12 h-12 rounded-full font-bold text-2xl shadow-lg active:scale-90 transition"
-                                        > + </button>
-                                    </div>
-                                ))}
-                            </div>
+            const totalPris = cart.reduce((sum, item) => sum + item.pris, 0);
 
-                            {cart.length > 0 && (
-                                <div className="bg-slate-800 p-6 rounded-3xl border-2 border-emerald-500 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <h2 className="text-xl font-bold mb-4">Din bestilling</h2>
-                                    <ul className="mb-6 space-y-2">
-                                        {cart.map((item, i) => (
-                                            <li key={i} className="flex justify-between text-slate-300">
-                                                <span>{item.name}</span>
-                                                <span>{item.price},-</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                    <button 
-                                        onClick={sendOrder} 
-                                        className="w-full bg-emerald-500 py-4 rounded-2xl font-bold text-xl hover:bg-emerald-600 transition"
-                                    >
-                                        Send til kjøkkenet
-                                    </button>
+            return (
+                <div className="max-w-md mx-auto p-6 pb-32">
+                    <header className="py-8 text-center">
+                        <h1 className="text-3xl font-black italic tracking-tighter">DIGITAL<span className="text-emerald-500">MENY</span></h1>
+                        <input 
+                            type="number" 
+                            placeholder="Ditt bordnummer"
+                            className="mt-4 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-center w-32 focus:border-emerald-500 outline-none"
+                            value={tableNumber}
+                            onChange={(e) => setTableNumber(e.target.value)}
+                        />
+                    </header>
+
+                    {/* STATUS-VARSEL FRA KJØKKENET */}
+                    {orderStatus && (
+                        <div className="mb-8 fade-in bg-emerald-950/50 border border-emerald-500/50 p-6 rounded-[2rem] text-center shadow-xl">
+                            <h3 className="font-bold text-emerald-400 uppercase tracking-widest text-sm mb-2">Status på din mat</h3>
+                            {orderStatus === 'sendt' && <p>Venter på bekreftelse fra kokken...</p>}
+                            {orderStatus === 'behandles' && (
+                                <div>
+                                    <p className="text-xl font-bold">Maten din tilberedes! 👨‍🍳</p>
+                                    <p className="mt-2 text-emerald-300">Forventet ferdig om ca. <span className="text-2xl font-black">{estTime}</span> minutter.</p>
                                 </div>
                             )}
+                            {orderStatus === 'ferdig' && <p className="text-xl font-bold text-white">Maten er ferdig! Velbekomme! 🍽️</p>}
                         </div>
-                    ) : (
-                        <div className="text-center bg-slate-800 p-12 rounded-3xl border border-emerald-500 shadow-2xl">
-                            <div className="text-6xl mb-4">👨‍🍳</div>
-                            <h2 className="text-2xl font-bold mb-2">Takk for bestillingen!</h2>
-                            <p className="text-slate-400">Kjøkkenet har mottatt ordren din og vil snart angi estimert ventetid.</p>
+                    )}
+
+                    {/* MENY-LISTE */}
+                    <div className="space-y-4">
+                        <h2 className="text-xl font-bold mb-4 border-l-4 border-emerald-500 pl-3">Dagens Retter</h2>
+                        {MENY.map(item => (
+                            <div key={item.id} className="bg-slate-900 p-5 rounded-3xl border border-slate-900 hover:border-slate-800 transition-all shadow-lg group">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-white">{item.navn}</h3>
+                                        <p className="text-slate-500 text-sm mt-1">{item.beskrivelse}</p>
+                                        <p className="text-emerald-500 font-bold mt-2">{item.pris},-</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => addToCart(item)}
+                                        className="bg-slate-800 group-hover:bg-emerald-600 p-3 rounded-2xl transition-all"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* HANDLEKURV (Flytende nederst) */}
+                    {cart.length > 0 && !orderStatus && (
+                        <div className="fixed bottom-6 left-6 right-6 fade-in">
                             <button 
-                                onClick={() => setOrderSent(false)} 
-                                className="mt-8 text-emerald-400 underline"
-                            > Bestill noe mer? </button>
+                                onClick={sendOrder}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-3xl shadow-2xl flex justify-between px-8 items-center transition-all transform active:scale-95"
+                            >
+                                <span>BESTILL {cart.length} RETTER</span>
+                                <span className="text-xl">{totalPris},-</span>
+                            </button>
                         </div>
                     )}
                 </div>
             );
-        };
+        }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<MenuApp />);
+        root.render(<GuestApp />);
     </script>
 </body>
 </html>
