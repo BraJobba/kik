@@ -28,7 +28,6 @@
                 const { data, error } = await supabaseClient
                     .from('orders')
                     .select('*')
-                    .order('created_at', { ascending: false });
                 
                 if (error) setStatus("Feil ved henting: " + error.message);
                 else {
