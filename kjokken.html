@@ -27,19 +27,20 @@
             const [orders, setOrders] = useState([]);
 
             const loadOrders = async () => {
-    // Vi fjerner .neq() eller .eq() helt for å feilsøke
+    // Vi henter absolutt alt uten filtere for å tvinge frem visning
     const { data, error } = await supabaseClient
         .from('orders')
-        .select('*'); 
+        .select('*');
     
     if (error) {
-        console.error("Supabase feil:", error.message);
+        console.error("Feil ved henting:", error.message);
     } else {
-        console.log("Data funnet:", data);
-        setOrders(data || []);
+        console.log("Data fra Supabase:", data);
+        // Sorterer manuelt i koden i stedet for i databasen for å unngå feil
+        const aktiveOrdrer = data ? data.filter(o => o.status !== 'ferdig') : [];
+        setOrders(aktiveOrdrer);
     }
 };
-
             useEffect(() => {
                 loadOrders();
                 const sub = supabaseClient.channel('kitchen_realtime')
