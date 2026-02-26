@@ -2,76 +2,93 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>Kjøkkenskjerm - Live</title>
+    <title>Kjøkken Kontrollpanel</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .order-card { animation: slideIn 0.3s ease-out; }
+    </style>
 </head>
-<body class="bg-slate-950 text-white p-8">
+<body class="bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
 
         const SUPABASE_URL = 'https://kirklktgeuqvkxhfibth.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_btB05RbKic_mG3lPpQ7jpw_NOkma2bE'; 
+        const SUPABASE_KEY = 'sb_publishable_DIN_NØKKEL'; // Bruk din lange nøkkel her
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        function Kitchen() {
+        function KitchenApp() {
             const [orders, setOrders] = useState([]);
-            const [error, setError] = useState(null);
 
-            const loadData = async () => {
-                const { data, error } = await supabaseClient.from('orders').select('*');
-                if (error) setError(error.message);
-                else setOrders(data);
+            const loadOrders = async () => {
+                const { data } = await supabaseClient
+                    .from('orders')
+                    .select('*')
+                    .neq('status', 'ferdig'); // Vi skjuler de som er ferdige
+                setOrders(data || []);
             };
 
             useEffect(() => {
-    loadData(); // Hent eksisterende ordrer med en gang
+                loadOrders();
+                const sub = supabaseClient.channel('kitchen_realtime')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadOrders)
+                    .subscribe();
+                return () => supabaseClient.removeChannel(sub);
+            }, []);
 
-    const channel = supabaseClient
-        .channel('schema-db-changes')
-        .on(
-            'postgres_changes', 
-            { 
-                event: 'INSERT', // Lytt spesifikt etter NYE rader
-                schema: 'public', 
-                table: 'orders' 
-            }, 
-            (payload) => {
-                console.log('NY ORDRE MOTTATT!', payload);
-                // Vi legger den nye ordren direkte inn i listen i stedet for å hente alt på nytt
-                setOrders(prev => [payload.new, ...prev]);
-            }
-        )
-        .subscribe((status) => {
-            console.log("Status på tilkobling:", status);
-        });
-
-    return () => supabaseClient.removeChannel(channel);
-}, []);
+            const markAsDone = async (id) => {
+                await supabaseClient.from('orders').update({ status: 'ferdig' }).eq('id', id);
+                // Listen oppdateres automatisk via realtime-subscriben
+            };
 
             return (
-                <div>
-                    <h1 className="text-3xl font-bold mb-6 text-emerald-400">Kjøkkenskjerm</h1>
-                    
-                    {error && <p className="text-red-500 mb-4">Feil: {error}</p>}
-                    
-                    <div className="grid gap-4">
+                <div className="max-w-5xl mx-auto">
+                    <header className="flex justify-between items-end mb-10 border-b border-slate-800 pb-6">
+                        <div>
+                            <h1 className="text-4xl font-black tracking-tight italic">KJØKKEN<span className="text-emerald-500">LIVE</span></h1>
+                            <p className="text-slate-500 font-medium">Oversikt over aktive bestillinger</p>
+                        </div>
+                        <div className="text-right">
+                            <span className="text-3xl font-mono font-bold text-emerald-500">{orders.length}</span>
+                            <p className="text-xs uppercase tracking-widest text-slate-600">Aktive Ordrer</p>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {orders.length === 0 ? (
-                            <p className="text-slate-500 italic">Venter på bestillinger fra databasen...</p>
+                            <div className="col-span-full py-20 text-center bg-slate-900/50 rounded-3xl border-2 border-dashed border-slate-800">
+                                <p className="text-slate-500 text-xl">Alt er servert. Ta deg en kaffe! ☕</p>
+                            </div>
                         ) : (
                             orders.map(o => (
-                                <div key={o.id} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-lg border-l-8 border-emerald-500">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <span className="text-emerald-400 font-black text-2xl uppercase">Bord {o.table_number}</span>
-                                            <h2 className="text-xl text-slate-100 mt-1 font-medium">{o.items}</h2>
+                                <div key={o.id} className="order-card bg-slate-900 rounded-[2rem] overflow-hidden border border-slate-800 shadow-2xl transition-all hover:border-emerald-500/50">
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="bg-emerald-500 text-black px-4 py-1 rounded-full font-black text-sm">
+                                                BORD {o.table_number}
+                                            </div>
+                                            <span className="text-slate-500 text-xs font-mono">ID: #{o.id}</span>
                                         </div>
-                                        <div className="text-slate-700 font-mono text-sm">#{o.id}</div>
+                                        
+                                        <h2 className="text-2xl font-bold mb-6 text-white leading-tight">
+                                            {o.items}
+                                        </h2>
+
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => markAsDone(o.id)}
+                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                FERDIG / SERVERT
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))
@@ -82,7 +99,7 @@
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<Kitchen />);
+        root.render(<KitchenApp />);
     </script>
 </body>
 </html>
